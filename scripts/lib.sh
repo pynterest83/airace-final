@@ -41,16 +41,30 @@ need_vram() {  # need_vram <index> <GB cần>
   fi
 }
 
-# Chấm một thư mục render. Không có GT thì báo và bỏ qua, KHÔNG chết.
+# Chấm một thư mục render so GT. Ngày thi THƯỜNG KHÔNG CÓ GT test — khi đó dùng
+# score_holdout (chấm trên view holdout, nơi ta có ảnh thật). Đừng im lặng bỏ qua:
+# không đo được gì cả ngày thi là hỏng.
 score() {  # score <tag> <thư_mục_render>
   local tag=$1 dir=$2
-  if [ -z "${VT_GT_DIR:-}" ] || [ ! -d "$VT_GT_DIR" ]; then
-    log "chấm $tag: BỎ QUA (chưa có VT_GT_DIR — dùng holdout để đo, xem docs/02)"
-    return 0
+  if [ -n "${VT_GT_DIR:-}" ] && [ -d "$VT_GT_DIR" ]; then
+    "$PY" "$VT_SRC/post/score_btc.py" --pred "$dir" --gt "$VT_GT_DIR" \
+        --csv "$VT_SCORES/$tag.csv" --json "$VT_SCORES/$tag.json" --lpips_tile 1024 \
+        2>&1 | tee -a "$VT_LOGS/score.log" | grep -E "SCORE|PSNR|SSIM|LPIPS" || true
+  else
+    log "chấm $tag: KHÔNG có VT_GT_DIR → dùng proxy holdout (score_holdout.sh)"
+    log "  ⚠ proxy holdout KHÔNG bằng điểm test: đòn BASE chuyển 1:1, đòn REFINER bị"
+    log "    phóng đại ~4× (đo paired 2 fold). Xem docs/02_NGAY_1_DO_DAC.md §3."
   fi
-  "$PY" "$VT_SRC/post/score_btc.py" --pred "$dir" --gt "$VT_GT_DIR" \
-      --csv "$VT_SCORES/$tag.csv" --json "$VT_SCORES/$tag.json" --lpips_tile 1024 \
-      2>&1 | tee -a "$VT_LOGS/score.log" | grep -E "SCORE|PSNR|SSIM|LPIPS" || true
+}
+
+# Chấm proxy trên view holdout — dùng khi không có GT test.
+#   score_holdout <tag> <dump_dir> [thư_mục_ảnh_đã_refine]
+# Không truyền thư mục thứ 3 = chấm chính render thô trong dump.
+score_holdout() {
+  local tag=$1 dump=$2 pred=${3:-}
+  [ -d "$dump" ] || { log "score_holdout $tag: không thấy dump $dump"; return 0; }
+  "$PY" "$VT_SRC/post/score_holdout.py" --dump "$dump" ${pred:+--pred "$pred"} \
+      --out "$VT_SCORES/$tag.csv" 2>&1 | tee -a "$VT_LOGS/score.log" | tail -3
 }
 
 # Đọc lại điểm đã chấm từ csv (dùng cho so sánh giữa các bước).

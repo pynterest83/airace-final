@@ -5,7 +5,7 @@
 # pipeline đều sinh ra từ dữ liệu BTC phát vòng này. Không mang gì từ vòng khác vào.
 source "$(dirname "$0")/lib.sh"
 g=${GPU:-$(echo "$VT_GPUS" | cut -d, -f1)}
-DUMPS=$(ls -d "$VT_RUNS"/refdata_ho* 2>/dev/null | paste -sd, -)
+DUMPS=$(ls -d "$VT_RUNS"/refdata_s* "$VT_RUNS"/refdata_ho* 2>/dev/null | paste -sd, -)
 [ -n "$DUMPS" ] || die "chưa có dump — chạy scripts/30_refdata.sh trước"
 
 if ! is_done refiner; then

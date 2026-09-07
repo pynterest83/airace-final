@@ -19,12 +19,21 @@ else
   log "════ 1. HÌNH HỌC — BỎ QUA theo SKIP_GEOM=1 ════"
 fi
 
-log "════ 2. DỮ LIỆU + TRAIN REFINER (song song với train 3DGS được) ════"
-bash "$H/30_refdata.sh" || die "30_refdata.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
-bash "$H/31_reftrain.sh" || die "31_reftrain.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
-
-log "════ 3. TRAIN 3DGS ${VT_SEEDS} ════"
-bash "$H/20_train.sh" || die "20_train.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+if [ "${VT_REFDATA_MODE:-p2}" = "p2" ]; then
+  # p2: model seed vừa là nền vừa sinh data refiner ⇒ phải train seed TRƯỚC.
+  log "════ 2. TRAIN 3DGS ${VT_SEEDS} (giấu 1/$VT_P2_EVERY view cho refiner) ════"
+  bash "$H/20_train.sh" || die "20_train.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+  log "════ 3. DỮ LIỆU + TRAIN REFINER ════"
+  bash "$H/30_refdata.sh" || die "30_refdata.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+  bash "$H/31_reftrain.sh" || die "31_reftrain.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+else
+  # separate: 4 model holdout riêng, độc lập với 3 seed ⇒ chạy song song được.
+  log "════ 2. DỮ LIỆU + TRAIN REFINER ════"
+  bash "$H/30_refdata.sh" || die "30_refdata.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+  bash "$H/31_reftrain.sh" || die "31_reftrain.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+  log "════ 3. TRAIN 3DGS ${VT_SEEDS} ════"
+  bash "$H/20_train.sh" || die "20_train.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"
+fi
 
 log "════ 4. SUY LUẬN ════"
 for s in $VT_SEEDS; do SEED=$s bash "$H/40_infer.sh" || die "40_infer seed $s hỏng"; done

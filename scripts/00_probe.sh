@@ -37,5 +37,17 @@ print("     KHÔNG chia điểm chung. Cổng THẬT là Sampson trong 10_geom.s
 print("     Đừng bỏ giai đoạn 0 chỉ vì số này thấp.")
 PYEOF
 
+# 5. Chi phí khớp dày trên MÁY NÀY — quyết ngân sách giai đoạn 0 trước khi cam kết giờ.
+if [ "${SKIP_BENCH:-0}" != "1" ] && [ -n "${VT_LIGHTGLUE:-}" ] \
+   && PYTHONPATH="$VT_LIGHTGLUE" "$PY" -c "import lightglue" 2>/dev/null; then
+  echo; echo "############ 5. CHI PHÍ KHỚP DÀY (bench 60 cặp) ############"
+  PYTHONPATH="$VT_LIGHTGLUE" CUDA_VISIBLE_DEVICES=$(echo "$VT_GPUS" | cut -d, -f1) \
+    "$PY" "$VT_SRC/geom/bench_match.py" --scene_dir "$VT_SCENE" \
+    --audit "$VT_RUNS/sfm_audit.json" --n 60 --kp "$VT_MATCH_KP" --res "$VT_MATCH_RES" \
+    --ransac "$VT_RANSAC" 2>&1 | tail -8 | tee -a "$VT_LOGS/probe.log"
+else
+  echo; echo "  (bỏ qua bench khớp dày — không có lightglue, hoặc SKIP_BENCH=1)"
+fi
+
 echo; echo "############ TÓM TẮT ############"
 log "probe xong. Sửa config/recipe.env theo các dòng ➜ rồi chạy scripts/run_all.sh"

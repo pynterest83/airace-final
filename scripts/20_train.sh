@@ -7,6 +7,17 @@ need_disk 60
 log "scene train: $VT_TRAIN_SCENE   cap=$VT_CAP steps=$VT_STEPS"
 [ "$VT_TRAIN_SCENE" = "$VT_SCENE" ] && log "  (dùng hình học GỐC của BTC — giai đoạn 0 chưa chạy hoặc đã bỏ qua)"
 
+# Ở chế độ p2, mỗi seed giấu 1/6 view train (residue lấy theo VT_P2_OFFSETS).
+# Chính model này vừa là nền để nộp, vừa sinh dữ liệu dạy refiner ở bước 30_refdata.
+p2_flags() {  # p2_flags <seed>
+  [ "${VT_REFDATA_MODE:-p2}" = "p2" ] || return 0
+  local i=0 s off=($VT_P2_OFFSETS)
+  for s in $VT_SEEDS; do
+    [ "$s" = "$1" ] && { echo "--holdout_every $VT_P2_EVERY --holdout_offset ${off[$i]:-0}"; return 0; }
+    i=$((i+1))
+  done
+}
+
 train_one() {  # train_one <seed> <gpu>
   local s=$1 g=$2 tag="gs_s$s"
   is_done "$tag" && { log "SKIP $tag (đã xong)"; return 0; }
@@ -14,7 +25,7 @@ train_one() {  # train_one <seed> <gpu>
   log "train $tag trên card $g"
   CUDA_VISIBLE_DEVICES=$g "$PY" -u "$VT_SRC/gs/trainer.py" \
     --scene_dir "$VT_TRAIN_SCENE" --result_dir "$VT_RUNS/$tag" \
-    $VT_GS_FLAGS --seed "$s" >"$VT_LOGS/$tag.log" 2>&1 \
+    $VT_GS_FLAGS --seed "$s" $(p2_flags "$s") >"$VT_LOGS/$tag.log" 2>&1 \
     || true   # eval_holdout có thể ném assert sau khi đã lưu ckpt — nghiệm thu theo ckpt
   [ -f "$VT_RUNS/$tag/ckpt.pt" ] || { echo "[LỖI] $tag — không có ckpt.pt, xem $VT_LOGS/$tag.log"; return 1; }
   rm -f "$VT_RUNS/$tag/ckpt_mid.pt"      # chỉ để resume; ổ đầy đã giết 4 lô

@@ -12,6 +12,43 @@ need_disk 120
 G=($(echo "$VT_GPUS" | tr ',' ' ')); NG=${#G[@]}
 HE=$VT_HOLDOUT_EVERY
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CHẾ ĐỘ p2 — không train model nào cả. Ba model seed (đã train ở 20_train.sh với
+# --holdout_every 6) mỗi cái giấu 1/6 view train; ta chỉ dump từ chúng.
+# Tiết kiệm ~7 GPU-giờ so với chế độ separate.
+# ⚠ 20_train.sh PHẢI chạy TRƯỚC bước này (run_all.sh đã xếp đúng thứ tự).
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "${VT_REFDATA_MODE:-p2}" = "p2" ]; then
+  need_disk 60
+  dump_seed() {  # dump_seed <seed> <gpu>
+    local s=$1 g=$2 tag="s$s"
+    [ -f "$VT_RUNS/gs_s$s/ckpt.pt" ] || { echo "[LỖI] chưa có $VT_RUNS/gs_s$s/ckpt.pt — chạy 20_train.sh trước"; return 1; }
+    is_done "dump_$tag" && { log "SKIP dump_$tag"; return 0; }
+    need_gpu "$g"
+    log "dump refiner data từ model seed $s (giấu 1/$VT_P2_EVERY view) trên card $g"
+    CUDA_VISIBLE_DEVICES=$g "$PY" "$VT_SRC/refine/refiner_data.py" \
+      --result_dir "$VT_RUNS/gs_s$s" --scene_dir "$VT_TRAIN_SCENE" \
+      --dump "$VT_RUNS/refdata_$tag" --targets holdout \
+      --holdout_every "$VT_P2_EVERY" --K "$VT_REF_K" --depth_fix 1 \
+      ${VT_REFDATA_LIMIT:+--limit $VT_REFDATA_LIMIT} \
+      >"$VT_LOGS/dump_$tag.log" 2>&1 || { echo "[LỖI] dump_$tag"; return 1; }
+    mark_done "dump_$tag"
+    log "xong dump_$tag ($(ls -d "$VT_RUNS/refdata_$tag"/DJI* 2>/dev/null | wc -l) view)"
+  }
+  i=0; for s in $VT_SEEDS; do queue_run "$i" dump_seed "$s"; i=$((i+1)); done
+  fail=0; queue_wait || fail=1
+  [ "$fail" = 0 ] || die "có dump hỏng — xem logs/"
+  n=$(ls -d "$VT_RUNS"/refdata_s*/ 2>/dev/null | wc -l)
+  log "DỮ LIỆU REFINER XONG (p2): $n dump từ $n model seed"
+  # proxy khi không có GT test: chấm luôn view holdout của dump đầu tiên
+  if [ -z "${VT_GT_DIR:-}" ]; then
+    d=$(ls -d "$VT_RUNS"/refdata_s*/ 2>/dev/null | head -1)
+    [ -n "$d" ] && score_holdout "H_raw_$(basename "$d")" "$d"
+  fi
+  exit 0
+fi
+
+
 holdout_one() {  # holdout_one <offset> <gpu>
   local O=$1 g=$2 tag="ho${HE}o$1"
   if ! is_done "gs_$tag"; then

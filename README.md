@@ -49,7 +49,7 @@ bash scripts/00_probe.sh        # đọc kỹ các dòng ➜ QUYẾT ĐỊNH
 # 3. Sửa config/recipe.env theo kết quả probe (nhất là VT_CAP theo VRAM thật)
 
 # 4. Chạy
-bash scripts/run_all.sh
+bash scripts/run_all.sh          # ~10h trên 1 card, train tất cả từ đầu
 ```
 
 Kết quả: `$VT_ROOT/submit/submission_<ngày>.zip`, đã tự kiểm đủ ảnh / đúng tên / đúng cỡ.
@@ -60,7 +60,7 @@ Kết quả: `$VT_ROOT/submit/submission_<ngày>.zip`, đã tự kiểm đủ �
 |---|---|---|
 | `00_probe.sh` | 4 phép đo quyết định recipe | 5 phút, CPU |
 | `10_geom.sh` | chuẩn hoá hình học (chỉ khi cổng trượt) | ~45 phút |
-| `30_refdata.sh` | 4 model holdout + dump dữ liệu refiner | ~5 h (÷ số card) |
+| `30_refdata.sh` | dump dữ liệu refiner (p2: từ chính model seed) | ~0,8 h |
 | `31_reftrain.sh` | train refiner **trên data BTC vòng này** (bf16) | ~2 h |
 | `20_train.sh` | train 3DGS, một seed mỗi card | ~105 phút/seed |
 | `40_infer.sh` | suy luận canvas đệm, một tiến trình (`SEED=42`) | ~7,5 phút/seed |

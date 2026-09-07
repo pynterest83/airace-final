@@ -56,8 +56,17 @@ hình học thay vì warp.
 | Suy luận, mỗi seed | **~7,5′** (đường 3 bước cũ: 41′) | **Có** |
 | Band-swap + đóng gói | ~12′ | chỉ khi có nhiều seed |
 
-**Tổng ~9 GPU-giờ** (trước tối ưu: 28,5 h tuần tự). Trên 4 card song song ≈ **4 giờ tường**,
-kể cả khi phải chạy giai đoạn 0.
+**Trên 1 card, train tất cả từ đầu** (đúng cấu hình tham khảo §13 đề bài):
+
+| Cấu hình | 1 card |
+|---|---|
+| `VT_REFDATA_MODE=separate` (4 model holdout riêng) | ~18h |
+| **`VT_REFDATA_MODE=p2` (mặc định)** | **~10h** |
+| p2 + `VT_SFM_MODE=glomap` | ~9h |
+
+Ba dòng trên là ba lựa chọn **thay thế nhau**, không cộng vào nhau — cùng một luồng đầy đủ,
+khác nhau ở chỗ áp bao nhiêu đòn tối ưu. Trên nhiều card thì chia cho số card ở các bước
+train song song được (train seed, dump); `31_reftrain` không chia được.
 
 ### Đường gấp (nếu vỡ kế hoạch)
 
@@ -72,9 +81,17 @@ khi có nó, rồi mới đi cải thiện. Điểm thấp còn hơn không nộ
 
 Nhiều khả năng không có. Khi đó **không chấm local được** và phải quay lại chế độ holdout:
 
-- Để `VT_GT_DIR` trống. Mọi lời gọi `score` sẽ tự bỏ qua, pipeline vẫn chạy.
-- Đo bằng **model holdout**: `refdata_ho4o*` đã có cặp (render, ảnh thật) trên view train bị
-  giấu. Chấm trên đó cho một proxy **cùng phân bố** với test.
+- Để `VT_GT_DIR` trống. `score()` sẽ nhắc dùng proxy thay vì im lặng bỏ qua.
+- Đo bằng **`score_holdout`** (`src/post/score_holdout.py`): chấm đúng thước BTC trên view
+  holdout trong dump, nơi `gt_und.png` là ảnh thật. Gọi tay:
+
+  ```bash
+  source scripts/lib.sh
+  score_holdout H_thô  $VT_RUNS/refdata_s42                 # render thô
+  score_holdout H_ref  $VT_RUNS/refdata_s42  <thư_mục_refined>   # sau refiner
+  ```
+
+  `30_refdata.sh` tự gọi nó khi `VT_GT_DIR` rỗng.
 **Luật proxy đã đo (paired, 2 fold — dùng đúng luật này):**
 
 | Loại quyết định | Holdout dùng được không |
