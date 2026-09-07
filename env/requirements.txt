@@ -1,0 +1,20 @@
+# Phụ thuộc TỐI THIỂU của pipeline. Bản đầy đủ đã kiểm: env/pip-freeze-reference.txt
+#
+# torch/torchvision: cài TRƯỚC, khớp CUDA của máy thi (xem setup_env.sh).
+# gsplat biên dịch JIT lần chạy đầu ⇒ máy thi PHẢI có nvcc + ninja + đọc/ghi được
+# ~/.cache/torch_extensions. Không có Internet thì phải mang sẵn wheel — xem README.
+
+gsplat==1.5.3
+lpips==0.1.4
+pycolmap==4.2.0
+opencv-python-headless==4.10.0.84
+numpy==2.2.6
+scipy==1.13.1
+imageio==2.37.4
+pillow==12.3.0
+tqdm==4.69.0
+ninja==1.13.0
+einops==0.8.2
+
+# Chỉ cần cho GIAI ĐOẠN 0 (khớp đặc trưng dày). Bỏ được nếu không sửa hình học.
+# LightGlue + SuperPoint: cài từ nguồn, xem setup_env.sh --with-lightglue

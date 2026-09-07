@@ -1,0 +1,8 @@
+# Mọi thứ sinh ra lúc chạy — venv, trọng số tải về, data BTC, kết quả.
+# Repo chỉ chứa MÃ NGUỒN + tài liệu + cấu hình.
+work/
+__pycache__/
+*.pyc
+*.pt
+*.zip
+config/score_anchors.json
