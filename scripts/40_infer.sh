@@ -7,6 +7,7 @@
 #
 #   SEED=42 GPU=0 bash scripts/40_infer.sh
 source "$(dirname "$0")/lib.sh"
+check_train_scene
 need_disk 20
 S=${SEED:?đặt SEED=<seed>}; g=${GPU:-$(echo "$VT_GPUS" | cut -d, -f1)}
 MODEL="$VT_RUNS/gs_s$S"

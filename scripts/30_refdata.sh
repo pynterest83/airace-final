@@ -8,6 +8,8 @@
 # ⚠ KHÔNG đọc một pixel ground-truth test nào. Không dùng dữ liệu vòng nào khác.
 #   Đây chính là lý do refiner train theo cách này là hợp lệ theo §11.1.
 source "$(dirname "$0")/lib.sh"
+check_train_scene
+check_scene
 need_disk 120
 G=($(echo "$VT_GPUS" | tr ',' ' ')); NG=${#G[@]}
 HE=$VT_HOLDOUT_EVERY

@@ -3,6 +3,8 @@
 #   bash scripts/20_train.sh              # mọi seed trong VT_SEEDS
 #   SEED=42 GPU=0 bash scripts/20_train.sh   # một seed cụ thể
 source "$(dirname "$0")/lib.sh"
+check_train_scene
+check_scene
 need_disk 60
 log "scene train: $VT_TRAIN_SCENE   cap=$VT_CAP steps=$VT_STEPS"
 [ "$VT_TRAIN_SCENE" = "$VT_SCENE" ] && log "  (dùng hình học GỐC của BTC — giai đoạn 0 chưa chạy hoặc đã bỏ qua)"

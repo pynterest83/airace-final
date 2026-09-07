@@ -7,7 +7,8 @@ from dataset import SceneData, frame_index  # noqa
 from refiner_data import fit_ground_plane  # noqa
 ap = argparse.ArgumentParser(); ap.add_argument("--scene_dir", required=True); ap.add_argument("--audit", required=True); ap.add_argument("--n", type=int, default=300)
 ap.add_argument("--res", type=int, default=3072); ap.add_argument("--kp", type=int, default=8192); ap.add_argument("--min_ov", type=float, default=0.15); ap.add_argument("--half", type=int, default=0)
-ap.add_argument("--ransac", default="fm", choices=["fm", "usac", "magsac", "none"]); ap.add_argument("--compile", type=int, default=0); ap.add_argument("--flash", type=int, default=1); ap.add_argument("--stride", type=int, default=50); a = ap.parse_args(); dev = "cuda"
+ap.add_argument("--ransac", default="fm", choices=["fm", "usac", "magsac", "none"]); ap.add_argument("--compile", type=int, default=0); ap.add_argument("--flash", type=int, default=int(os.environ.get("LG_FLASH", "0")),
+    help="mặc định theo LG_FLASH (=0). flash-SDPA của torch 2.13 tốn 0,4-0,8 s MỖI cỡ tensor mới → bench với flash=1 cho số bi quan ~30 lần"); ap.add_argument("--stride", type=int, default=50); a = ap.parse_args(); dev = "cuda"
 from lightglue import LightGlue, SuperPoint
 ext = SuperPoint(max_num_keypoints=a.kp).eval().to(dev); mt = LightGlue(features="superpoint", flash=bool(a.flash)).eval().to(dev)
 if a.compile: mt.compile(mode="reduce-overhead")

@@ -4,6 +4,26 @@ _HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_HERE/../config/recipe.env"
 
 log()  { echo "[$(date -u +%H:%M:%S)] $*" | tee -a "$VT_LOGS/run.log"; }
+
+# Kiểm scene có đủ thứ cần TRƯỚC khi đốt hàng giờ GPU.
+check_scene() {  # check_scene [thư_mục]
+  local s=${1:-$VT_TRAIN_SCENE}
+  [ -d "$s/train/images" ] || die "không thấy $s/train/images"
+  [ -d "$s/train/sparse/0" ] || die "không thấy $s/train/sparse/0"
+  [ -f "$s/test/test_poses.csv" ] || die "không thấy $s/test/test_poses.csv"
+  local n=$(ls "$s/train/images" | wc -l)
+  [ "$n" -ge 10 ] || die "$s/train/images chỉ có $n ảnh — sai thư mục?"
+  log "scene OK: $(basename "$s") — $n ảnh train, $(( $(wc -l < "$s/test/test_poses.csv") - 1 )) pose test"
+}
+
+# Chốt chặn: giai đoạn 0 đã chạy xong mà lại sắp train trên scene GỐC = mất +3,9 điểm.
+# Đây từng là lỗi thật (VT_TRAIN_SCENE bị đóng băng lúc source). Đừng để nó im lặng nữa.
+check_train_scene() {
+  if is_done geom && [ "$VT_TRAIN_SCENE" = "$VT_SCENE" ]; then
+    die "giai đoạn 0 ĐÃ XONG (có $VT_SCENE_FIXED) nhưng VT_TRAIN_SCENE vẫn trỏ scene GỐC.
+       Sẽ mất toàn bộ đòn sửa hình học. Kiểm biến VT_TRAIN_SCENE_FORCE, hoặc bỏ export VT_TRAIN_SCENE."
+  fi
+}
 die()  { echo "[LỖI] $*" | tee -a "$VT_LOGS/run.log" >&2; exit 1; }
 
 # Chạy một lệnh, đo thời gian, ghi log riêng theo tag.
