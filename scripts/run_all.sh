@@ -8,6 +8,8 @@
 source "$(dirname "$0")/lib.sh"
 H="$(dirname "$0")"
 t0=$(date +%s)
+disk_guard_start
+trap disk_guard_stop EXIT
 
 log "════ 0. ĐO DỮ LIỆU ════"
 bash "$H/00_probe.sh" || die "00_probe.sh hỏng — dừng, đừng chạy tiếp trên nền hỏng"

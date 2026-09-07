@@ -125,6 +125,37 @@ ram_gate() {
   done
 }
 
+# ─── CANH Ổ ĐĨA TRONG LÚC CHẠY ──────────────────────────────────────────────
+# need_disk chỉ chụp ảnh MỘT LẦN lúc bắt đầu. Trên máy dùng chung, ổ đầy giữa
+# chừng là chuyện thường — đã xảy ra: 329 GB lúc phóng, 84 GB sau 5 tiếng,
+# training chết ở bước 5000/15000. Watchdog này chạy nền suốt lượt chạy.
+#
+# KHÔNG tự kill: giết giữa chừng mất nhiều hơn được, và hệ thống mark cho phép
+# chạy lại từ chỗ hỏng. Nó chỉ (a) hét vào log sớm, (b) thu hồi ckpt_mid.pt —
+# file chỉ dùng để resume, mỗi cái ~8 GB, xoá an toàn vì ckpt.pt mới là bản chính.
+disk_guard_start() {  # disk_guard_start [ngưỡng_GB]
+  local floor=${1:-${VT_DISK_FLOOR_GB:-60}}
+  ( while :; do
+      local free=$(df -BG --output=avail "$VT_ROOT" 2>/dev/null | tail -1 | tr -dc '0-9')
+      if [ -n "$free" ] && [ "$free" -lt "$floor" ]; then
+        log "⚠⚠ Ổ ĐĨA CÒN ${free}G (dưới ngưỡng ${floor}G) — lượt chạy có thể chết giữa chừng"
+        local n=0
+        for m in "$VT_RUNS"/*/ckpt_mid.pt; do
+          [ -f "$m" ] && { rm -f "$m"; n=$((n+1)); }
+        done
+        [ "$n" -gt 0 ] && log "   đã thu hồi $n file ckpt_mid.pt (chỉ dùng resume, an toàn)"
+        log "   thư mục phình nhất: $(du -sh "$VT_RUNS"/* 2>/dev/null | sort -rh | head -3 | awk '{printf "%s %s  ",$1,$2}')"
+      fi
+      sleep 120
+    done ) &
+  echo $! > "$VT_ROOT/.disk_guard.pid"
+  log "canh ổ đĩa: bật (ngưỡng ${floor}G, kiểm mỗi 2 phút)"
+}
+disk_guard_stop() {
+  local f="$VT_ROOT/.disk_guard.pid"
+  [ -f "$f" ] && { kill "$(cat "$f")" 2>/dev/null; rm -f "$f"; }
+}
+
 # Kiểm ổ trước mỗi lô nặng — đã mất kết quả 4 lần vì đầy ổ giữa chừng.
 need_disk() {  # need_disk <GB>
   local need=${1:-50} free
