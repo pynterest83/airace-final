@@ -22,37 +22,93 @@ contest/
 
 ---
 
-## Trước ngày thi — đóng gói offline (BẮT BUỘC)
+## Chạy từ đầu trên một server mới
 
-Vòng 2 máy thi **không có Internet**. LPIPS-VGG (553 MB), RAFT, SuperPoint/LightGlue đều
-tải từ mạng lần đầu dùng. Chạy ở máy này, lúc **còn** mạng:
+### 0. Server cần có sẵn
+
+| | |
+|---|---|
+| GPU | ≥96 GB VRAM cho `VT_CAP=36000000`. Ít hơn thì hạ cap — `verify_env.sh` in ra mức an toàn |
+| **nvcc + ninja** | gsplat biên dịch JIT lần chạy đầu. Thiếu là chết ngay, không có đường vòng |
+| Ổ đĩa | ~150 GB |
+| RAM | ≥128 GB (refiner nạp dataset lên bộ nhớ) |
+| Mạng | cần **một lần** cho bước 2. Sau đó chạy offline được |
+
+### 1. Lấy code (~700 KB)
+
+```bash
+git clone <repo-url> contest && cd contest
+```
+
+Mọi thứ sinh ra lúc chạy sẽ nằm trong `contest/work/` — venv, trọng số, data, kết quả.
+Đừng đặt `VT_ROOT`; để mặc định thì thư mục này tự chứa và xoá `work/` là sạch hoàn toàn.
+
+### 2. Môi trường (~15 phút, cần mạng)
+
+```bash
+bash env/setup_env.sh --with-lightglue   # venv + torch + gsplat + LightGlue
+bash env/fetch_models.sh                 # 599 MB trọng số pretrained
+bash env/verify_env.sh                   # PHẢI ĐẬU HẾT trước khi đi tiếp
+```
+
+`setup_env.sh` cài `torch==2.13.0` với `--index-url .../cu128`. **Nếu CUDA của server khác,
+sửa dòng đó trong `env/setup_env.sh`** — đây là chỗ hay hỏng nhất trên máy lạ.
+
+Pipeline không dùng model 3DGS hay diffusion pretrained nào. Bốn trọng số tải về đều là
+mạng thị giác đa dụng: VGG16 (LPIPS — bộ chấm *và* loss refiner), RAFT (depth-fix),
+SuperPoint + LightGlue (khớp dày).
+
+### 3. Đưa data BTC vào (~4 GB)
+
+Data **không** nằm trong git. Chuyển riêng:
+
+```bash
+mkdir -p work/data
+rsync -avP <nguồn>/scene/ work/data/scene/
+```
+
+Cấu trúc phải đúng: `work/data/scene/train/{images,sparse/0}` + `work/data/scene/test/test_poses.csv`
+
+### 4. Chạy thử tí hon (~15 phút) trước khi cam kết 9 tiếng
+
+```bash
+VT_SCENE=$PWD/work/data/scene VT_VENV=$PWD/work/venv GPU=0 bash tests/smoke.sh
+```
+
+Nó chạy đủ 6 khâu ở quy mô nhỏ và ra một file zip. Hỏng ở đây thì đừng chạy tiếp.
+
+### 5. Đo dữ liệu — 2 giờ đầu ngày thi, CPU thuần
+
+```bash
+bash scripts/00_probe.sh
+```
+
+Đọc kỹ các dòng **➜ QUYẾT ĐỊNH**. Bốn câu nó trả lời quyết định recipe; sai một câu là
+mất đúng một đòn. Sửa `config/recipe.env` theo đó — nhất là `VT_CAP` theo VRAM thật.
+
+### 6. Chạy toàn bộ
+
+```bash
+bash scripts/run_all.sh          # ~9h trên 1 card, train TẤT CẢ từ đầu
+```
+
+Kết quả: `work/submit/submission_<ngày>.zip`, đã tự kiểm đủ ảnh / đúng tên / đúng cỡ / PNG.
+
+Chạy nền thì nên dùng `tmux` để còn xem lại được:
+
+```bash
+tmux new -s duyet 'bash scripts/run_all.sh'   # Ctrl-B D để thoát, tmux attach -t duyet để vào lại
+```
+
+### Nếu máy thi KHÔNG có Internet
+
+Vòng 2 đã không có. Chạy ở máy **có** mạng trước:
 
 ```bash
 bash env/make_offline_bundle.sh ~/vt_offline    # ~4 GB
 ```
 
-Copy cả `~/vt_offline` sang máy thi, làm theo `CAI_DAT.txt` trong đó.
-
-## Bắt đầu
-
-```bash
-# 1. Trỏ vào dữ liệu BTC và dựng môi trường
-export VT_ROOT=$HOME/vt-contest
-mkdir -p $VT_ROOT/data && cp -r <thư mục data BTC> $VT_ROOT/data/scene
-
-bash env/setup_env.sh
-bash env/verify_env.sh          # PHẢI đậu hết trước khi làm gì tiếp
-
-# 2. Đo dữ liệu — 2 giờ đầu, CPU thuần, quyết định recipe
-bash scripts/00_probe.sh        # đọc kỹ các dòng ➜ QUYẾT ĐỊNH
-
-# 3. Sửa config/recipe.env theo kết quả probe (nhất là VT_CAP theo VRAM thật)
-
-# 4. Chạy
-bash scripts/run_all.sh          # ~10h trên 1 card, train tất cả từ đầu
-```
-
-Kết quả: `$VT_ROOT/submit/submission_<ngày>.zip`, đã tự kiểm đủ ảnh / đúng tên / đúng cỡ.
+Copy cả `~/vt_offline` sang máy thi rồi làm theo `CAI_DAT.txt` trong đó.
 
 ### Chạy từng bước
 
