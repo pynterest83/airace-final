@@ -42,11 +42,15 @@ if [ "${VT_REFDATA_MODE:-p2}" = "p2" ]; then
   [ "$fail" = 0 ] || die "có dump hỏng — xem logs/"
   n=$(ls -d "$VT_RUNS"/refdata_s*/ 2>/dev/null | wc -l)
   log "DỮ LIỆU REFINER XONG (p2): $n dump từ $n model seed"
-  # proxy khi không có GT test: chấm luôn view holdout của dump đầu tiên
-  if [ -z "${VT_GT_DIR:-}" ]; then
-    d=$(ls -d "$VT_RUNS"/refdata_s*/ 2>/dev/null | head -1)
-    [ -n "$d" ] && score_holdout "H_raw_$(basename "$d")" "$d"
-  fi
+  # Xếp hạng seed bằng proxy holdout — dùng ở 50_bandswap để chọn nguồn HF.
+  # Chấm ở ĐÂY (pha train) chứ không ở pha suy luận, nên KHÔNG tốn phút nào của
+  # cửa sổ infer. Ảnh thật là gt_und.png trong dump, luôn có, không cần GT test.
+  # ⚠ Xếp hạng này chỉ đáng tin ở việc LOẠI seed kém nhất — đo được: chọn nhầm
+  #   seed kém mất 0,10 điểm, còn lẫn giữa hạng 1 và 2 chỉ đáng 0,012.
+  for s in $VT_SEEDS; do
+    d="$VT_RUNS/refdata_s$s"
+    [ -d "$d" ] && score_holdout "H_s$s" "$d"
+  done
   exit 0
 fi
 

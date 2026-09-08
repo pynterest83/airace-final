@@ -18,9 +18,24 @@ if [ -n "${VT_GT_DIR:-}" ] && [ -d "$VT_GT_DIR" ]; then
     awk "BEGIN{exit !($v > $bv)}" && { bv=$v; best=$s; }
   done
   log "seed tốt nhất = $best ($bv) → lấy làm nguồn tần số cao"
-else
-  log "không chấm được (chưa có GT) → HF lấy seed đầu: $best"
-fi
+  else
+    # Không có GT test (đúng tình huống ngày thi) → xếp hạng bằng proxy holdout
+    # do 30_refdata đã chấm sẵn. Trước đây chỗ này lấy seed ĐẦU MẢNG, tức chọn mù:
+    # đo được trên 3 seed thật, chọn nhầm seed kém mất 0,10 điểm — và band-swap
+    # lúc đó còn TỆ HƠN dùng một mình seed tốt nhất (61,9113 vs 61,9166).
+    bv=-1
+    for e in "${DIRS[@]}"; do
+      s="${e%%:*}"; [ -f "$VT_SCORES/H_s$s.csv" ] || continue
+      v=$(read_score "H_s$s")
+      awk "BEGIN{exit !($v > $bv)}" && { bv=$v; best=$s; }
+    done
+    if [ "$bv" = "-1" ]; then
+      log "⚠ không có điểm holdout (scores/H_s*.csv) → HF đành lấy seed đầu: $best"
+      log "   chạy 30_refdata.sh để sinh điểm holdout thì sẽ chọn có căn cứ hơn"
+    else
+      log "không có GT → xếp hạng bằng proxy holdout: seed $best ($bv) làm nguồn HF"
+    fi
+  fi
 
 LF=$(printf "%s," "${DIRS[@]#*:}" | sed 's/,$//' | tr ',' '\n' | sed 's/$/:1/' | paste -sd, -)
 run bandswap "$PY" "$VT_SRC/post/bandswap.py" \
