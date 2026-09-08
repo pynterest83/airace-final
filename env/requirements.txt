@@ -15,6 +15,7 @@ pillow==12.3.0
 tqdm==4.69.0
 ninja==1.13.0
 einops==0.8.2
+tensorly==0.9.0
 
 # Chỉ cần cho GIAI ĐOẠN 0 (khớp đặc trưng dày). Bỏ được nếu không sửa hình học.
 # LightGlue + SuperPoint: cài từ nguồn, xem setup_env.sh --with-lightglue
