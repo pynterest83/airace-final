@@ -107,3 +107,24 @@ Máy chấm chậm hơn máy nhà **3,8×** vẫn kịp 600 s.
 - **Hướng B (nhiều tiến trình) không đo** — với P thì không cần, và giải pháp cam kết 1 card.
 - Chưa kiểm trên **đúng scene thi** (1101 ảnh): số ảnh train nhiều hơn → cache miss nhiều hơn → P càng
   ăn hơn ở đây (hiện chỉ 3,34 lượt/view vì 404 ảnh). Chiều có lợi.
+
+## 8. Hướng B (N tiến trình trên 1 card) — ĐÃ ĐO, không ăn
+
+Sau khi áp P_X, chia 102 view xen kẽ thành N shard, N tiến trình cùng chạy trên card 7:
+
+| N | Tường | Mỗi tiến trình | Giống N=1 | GPU util |
+|---|---|---|---|---|
+| 1 | 112,1 s | 112 s / 102 view | — | — |
+| 2 | 113,0 s | 112–113 s / 51 view | **102/102** | (sampler hỏng) |
+| 3 | 119,4 s | 112–116 s / 34 view | **102/102** | 88 % |
+
+Mỗi tiến trình xử lý 1/N số view mất **đúng bằng** thời gian xử lý toàn bộ ⇒ GPU đã bão hoà
+ở 193 lần rasterize/view; chia N chỉ chia đều sự chậm, N=3 còn lỗ 6 % vì tranh chấp.
+Đầu ra bit-identical (nhờ X gieo hạt theo pose) nên B là *đúng*, chỉ là *vô ích*. **Không áp.**
+
+Kết luận chung về ②: sau A + P_X, thời gian còn lại gần như thuần là 193 lần rasterize cho depth
+đích mỗi view (0,75 s) — đây là chi phí cố hữu của `--depth_mode quant --depth_levels 192`.
+Muốn giảm nữa chỉ còn cách hạ `depth_levels` (−0,16 điểm theo hồ sơ) — không đáng, biên đã 74 %.
+
+Bài học harness: hai lần tự giết shell vì `grep`/`kill` khớp vào chính dòng lệnh của mình.
+Sampler nền phải ghi PID ra file và kill theo PID; mẫu tìm đọc từ file, không viết literal.
