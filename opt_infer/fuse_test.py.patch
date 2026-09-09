@@ -1,0 +1,15 @@
+--- fuse_test.py.orig	2026-09-09 14:22:20.678170867 +0000
++++ fuse_test.py	2026-09-09 14:22:20.706170506 +0000
+@@ -144,7 +144,11 @@
+     if ref is not None and quantile_levels:
+         rv = ref[ref > 1e-4].flatten()
+         qs = torch.linspace(0.002, 0.998, levels, device=device)
+-        ts = torch.quantile(rv[torch.randperm(rv.numel(), device=device)[:1 << 20]].float(), qs)
++        # X (09/09): gieo hạt THEO POSE cho lượt lấy mẫu 1M pixel — kết quả không còn phụ thuộc THỨ TỰ gọi
++        # ⇒ depth nguồn tính trước lúc đóng gói == tính tại chỗ TỪNG BIT, và bỏ lượt nguồn không làm lệch lượt đích.
++        import hashlib as _hl
++        _g = torch.Generator(device=device); _g.manual_seed(int.from_bytes(_hl.sha1(np.ascontiguousarray(w2c, dtype=np.float64).tobytes()).digest()[:8], "little"))
++        ts = torch.quantile(rv[torch.randperm(rv.numel(), device=device, generator=_g)[:1 << 20]].float(), qs)
+         ts = torch.unique(torch.cat([ts, torch.tensor([lo, hi], device=device)])).sort().values
+     else:
+         ts = torch.exp(torch.linspace(math.log(max(lo, 1e-3)), math.log(max(hi, lo * 1.01)), levels, device=device))

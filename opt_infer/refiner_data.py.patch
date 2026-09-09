@@ -1,0 +1,35 @@
+--- refiner_data.py.orig	2026-09-09 14:21:03.982146220 +0000
++++ refiner_data.py	2026-09-09 14:32:05.894168474 +0000
+@@ -155,7 +155,7 @@
+     p.add_argument("--dfix_max", type=float, default=32.0, help="giới hạn |flow| warp0↔warp1 (px)")
+     p.add_argument("--dfix_blur", type=float, default=8.0, help="sigma làm trơn trường Δz")
+     p.add_argument("--dfix_rel", type=float, default=0.15, help="giới hạn |Δz|/z")
+-    p.add_argument("--src_depth_dir", default="", help="02/09: thư mục .npy depth NGUỒN đã hiệu chỉnh (depth_prior.py) — mask che khuất hiện dùng depth nguồn cũng sai 3-6%")
++    p.add_argument("--src_depth_cache", default="", help="P: thư mục .npy depth NGUỒN đã tính trước (đúng canvas đệm) — có file thì NẠP THẲNG, bỏ qua render+quantile"); p.add_argument("--precompute_src_depth", default="", help="P: tính depth nguồn cho MỌI ảnh train rồi lưu .npy vào đây và thoát (chạy lúc đóng gói)"); p.add_argument("--src_depth_dir", default="", help="02/09: thư mục .npy depth NGUỒN đã hiệu chỉnh (depth_prior.py) — mask che khuất hiện dùng depth nguồn cũng sai 3-6%")
+     p.add_argument("--dfix_wval", type=int, default=0, help="1 = nhân trọng số mỗi cặp với vùng CẢ HAI warp hợp lệ")
+     p.add_argument("--dfix_nsrc", type=int, default=2, help="số nguồn tham gia GIẢI Δz: mỗi cặp cho một ước lượng độc lập của CÙNG một đại lượng vô hướng → gộp theo trọng số thông tin")
+     p.add_argument("--dfix_scale", type=float, default=0.25, help="tỉ lệ chạy RAFT cho bài toán giải depth (nghi phạm: 1/4 res chưa đủ chính xác dưới pixel)")
+@@ -219,6 +219,10 @@
+         02/09 BUG: trước đây override chỉ nằm ở vòng lặp nguồn, nhưng khối depth_fix chạy TRƯỚC và
+         đã nạp cache bằng depth chưa sửa ⇒ override thành code chết (x22 ra đúng bằng mốc 4 chữ số)."""
+         if si not in depth_cache:
++            if a.src_depth_cache:   # P (09/09): depth nguồn chỉ phụ thuộc pose train + model ⇒ tính trước lúc đóng gói
++                _pc = os.path.join(a.src_depth_cache, os.path.splitext(scene.train_metas[si].name)[0] + ".npy")
++                if os.path.exists(_pc):
++                    depth_cache[si] = torch.from_numpy(np.load(_pc)).float(); return depth_cache[si].to(dev)   # .float(): fp16 lưu đĩa → upcast; fp32 thì no-op
+             d, _ = FT.render_depth(splats, sh_degree, scene.train_metas[si].w2c(), K_np, W, H, dev)
+             if a.depth_mode == "quant":   # 09/09 q48: depth nguồn phải cùng công thức với depth đích (test che khuất so hai depth)
+                 d, _ = FT.render_depth_quantile(splats, scene.train_metas[si].w2c(), K_np, W, H, dev, q=a.depth_q, levels=a.depth_levels, ref=d)
+@@ -257,6 +261,12 @@
+         print(f"[plane] n={np.round(n,3)} d={d:.3f} inlier {100*frac:.1f}%", flush=True)
+     os.makedirs(a.dump, exist_ok=True); meta = []
+     depth_cache = {}
++    if a.precompute_src_depth:   # P: chạy MỘT lần lúc đóng gói, cùng setup (pad/K/W/H/cờ depth) như lúc suy luận
++        os.makedirs(a.precompute_src_depth, exist_ok=True); _t0 = time.time(); _n = len(scene.train_metas)
++        for _si in range(_n):
++            src_depth(_si); np.save(os.path.join(a.precompute_src_depth, os.path.splitext(scene.train_metas[_si].name)[0] + ".npy"), depth_cache[_si].numpy())
++            if _si % 50 == 0: print(f"[precompute] {_si}/{_n} · {time.time() - _t0:.0f}s", flush=True)
++        print(f"[precompute] XONG {_n} depth nguồn → {a.precompute_src_depth} ({time.time() - _t0:.0f}s)", flush=True); return
+     mono_cache = {}
+     def mono_aligned(si, d_s):
+         """Depth mono (DA-v2, disparity thô thấp phân giải) của ảnh nguồn si, căn a*x+b về 1/d_splat (LS + trim outlier 2 vòng).

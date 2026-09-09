@@ -1,0 +1,129 @@
+--- transfer_test_poses.py.orig	2026-09-09 14:21:03.983146207 +0000
++++ transfer_test_poses.py	2026-09-09 14:21:03.983146207 +0000
+@@ -10,60 +10,73 @@
+ def main():
+     ap = argparse.ArgumentParser(); ap.add_argument("--orig_scene", required=True); ap.add_argument("--new_scene", required=True); ap.add_argument("--out_scene", required=True)
+     ap.add_argument("--min_inl", type=int, default=30, help="09/09: ngưỡng inlier PnP (kp); dưới → thất bại"); ap.add_argument("--fallback", default="none", choices=["none", "frustum", "sim3"], help="09/09: khi kp thất bại: frustum = PnP trên mọi điểm cũ trong frustum theo pose cũ (bản tr4); sim3 = Sim3 cục bộ từ 12 camera train gần nhất (old→new); ghi danh sách view fallback ra test/transfer_fallback.json")
+-    ap.add_argument("--oracle_csv", default=""); ap.add_argument("--reproj_thr", type=float, default=3.0); ap.add_argument("--max_pts", type=int, default=6000); ap.add_argument("--pnp_thr", type=float, default=4.0); ap.add_argument("--pts", default="frustum", help="frustum | nb (điểm do ảnh train kề Δframe quan sát) | own (chẩn đoán: track của chính ảnh)"); ap.add_argument("--nb_offsets", default="2,3"); a = ap.parse_args()
++    ap.add_argument("--oracle_csv", default=""); ap.add_argument("--reproj_thr", type=float, default=3.0); ap.add_argument("--max_pts", type=int, default=6000); ap.add_argument("--pnp_thr", type=float, default=4.0); ap.add_argument("--pts", default="frustum", help="frustum | nb (điểm do ảnh train kề Δframe quan sát) | own (chẩn đoán: track của chính ảnh)"); ap.add_argument("--nb_offsets", default="2,3"); ap.add_argument("--pre_save", default="", help="A: lưu X1/kp_obs/K/dist/pose ra .npy rồi tiếp tục"); ap.add_argument("--pre_load", default="", help="A: nạp từ .npy, BỎ QUA tam giác hoá (chỉ còn PnP)"); a = ap.parse_args()
+     from dataset import frame_index
+-    rec0 = pycolmap.Reconstruction(os.path.join(a.orig_scene, "train", "sparse", "0")); rec1 = pycolmap.Reconstruction(os.path.join(a.new_scene, "train", "sparse", "0"))
+-    cam1 = next(iter(rec1.cameras.values())); K = cam1.calibration_matrix(); dist = np.asarray(cam1.params[4:8], dtype=np.float64) if cam1.model.name == "OPENCV" else np.zeros(4); W, H = cam1.width, cam1.height; Kinv = np.linalg.inv(K)
+-    tr_names = set(os.listdir(os.path.join(a.orig_scene, "train", "images"))); new_w2c = {im.name: w2c_of(im) for im in rec1.images.values() if im.has_pose}; old_w2c = {im.name: w2c_of(im) for im in rec0.images.values()}
+-    # quan sát 2D của từng điểm cũ trên ảnh train: pid -> list (name, xy)
+-    obs = {}
+-    for im in rec0.images.values():
+-        if im.name not in tr_names or im.name not in new_w2c: continue
+-        for p in im.points2D:
+-            if p.has_point3D(): obs.setdefault(p.point3D_id, []).append((im.name, np.asarray(p.xy, dtype=np.float64)))
+-    def und(p): return cv2.undistortPoints(np.asarray(p, dtype=np.float64).reshape(-1, 1, 2), K, dist, P=K).reshape(-1, 2)
+-    # DLT tam giác hoá với pose mới
+-    Xn = {}; nrej = 0
+-    for pid, ol in obs.items():
+-        if len(ol) < 2: continue
+-        A = []; Ps = []; uvs = und(np.array([xy for _, xy in ol]))
+-        for (nm, _), uv in zip(ol, uvs):
+-            P = K @ new_w2c[nm][:3, :4]; Ps.append(P); A.append(uv[0] * P[2] - P[0]); A.append(uv[1] * P[2] - P[1])
+-        _, _, Vt = np.linalg.svd(np.array(A)); X = Vt[-1]; X = X[:3] / X[3]
+-        errs = []
+-        for P, uv in zip(Ps, uvs):
+-            x = P @ np.r_[X, 1]
+-            if x[2] <= 0: errs.append(1e9); continue
+-            errs.append(np.linalg.norm(x[:2] / x[2] - uv))
+-        if np.median(errs) <= a.reproj_thr: Xn[pid] = X
+-        else: nrej += 1
+-    print(f"[y44b] tam giác hoá lại {len(Xn)} điểm cũ với pose mới (loại {nrej} tái chiếu > {a.reproj_thr} px; điểm cũ có ≥2 quan sát train: {sum(1 for v in obs.values() if len(v) >= 2)})", flush=True)
+-    pids = np.array(list(Xn)); X0 = np.array([rec0.points3D[p].xyz for p in pids]); X1 = np.array([Xn[p] for p in pids]); f = K[0, 0]; pid_row = {int(p): i for i, p in enumerate(pids)}
+-    seen_by = {}  # tên ảnh train -> set chỉ số hàng của điểm nó quan sát
+-    for im in rec0.images.values():
+-        if True: seen_by[im.name] = set(pid_row[p.point3D_id] for p in im.points2D if p.has_point3D() and p.point3D_id in pid_row)
+-    byfr = {frame_index(n): n for n in tr_names}; offs = [int(x) for x in a.nb_offsets.split(",")]
+-    def cand_rows(name):
+-        if a.pts == "own": return np.array(sorted(seen_by.get(name, set())), dtype=int)
+-        if a.pts == "nb":
+-            fr = frame_index(name); S = set()
+-            for d in offs:
+-                for sgn in (-d, d):
+-                    m = byfr.get(fr + sgn)
+-                    if m and m != name: S |= seen_by.get(m, set())
+-            return np.array(sorted(S), dtype=int)
+-        return None
+-    kp_obs = {}
+-    for im in rec0.images.values(): kp_obs[im.name] = [(np.asarray(p.xy, dtype=np.float64), pid_row[p.point3D_id]) for p in im.points2D if p.has_point3D() and p.point3D_id in pid_row]
+-    def sim3_local(W_old, k=12):   # 09/09: Sim3 Umeyama old→new trên k camera train gần nhất (theo tâm cũ); xoay = R_new_nb·R_old_nbᵀ·R_old
+-        names = [n for n in old_w2c if n in new_w2c and n in tr_names]
+-        Co = np.array([-old_w2c[n][:3, :3].T @ old_w2c[n][:3, 3] for n in names]); Cn = np.array([-new_w2c[n][:3, :3].T @ new_w2c[n][:3, 3] for n in names])
+-        c_old = -W_old[:3, :3].T @ W_old[:3, 3]; nb = np.argsort(np.linalg.norm(Co - c_old, axis=1))[:k]
+-        A, B = Co[nb], Cn[nb]; ma, mb = A.mean(0), B.mean(0); U, D, Vt = np.linalg.svd((B - mb).T @ (A - ma) / k); S = np.eye(3)
+-        if np.linalg.det(U @ Vt) < 0: S[2, 2] = -1
+-        R = U @ S @ Vt; sc = np.trace(np.diag(D) @ S) / ((A - ma) ** 2).sum(1).mean(); t = mb - sc * R @ ma
+-        c_new = sc * R @ c_old + t; n0 = names[nb[0]]; Rn = new_w2c[n0][:3, :3] @ old_w2c[n0][:3, :3].T @ W_old[:3, :3]
+-        Wn = np.eye(4); Wn[:3, :3] = Rn; Wn[:3, 3] = -Rn @ c_new; return Wn
++    if a.pre_load:
++        _pre = np.load(a.pre_load, allow_pickle=True).item()
++        K, dist, W, H, X1 = _pre["K"], _pre["dist"], int(_pre["W"]), int(_pre["H"]), _pre["X1"]
++        kp_obs = {n: [(xy, int(r)) for xy, r in zip(v[0], v[1])] for n, v in _pre["kp_obs"].items()}
++        old_w2c, new_w2c = _pre["old_w2c"], _pre["new_w2c"]; f = K[0, 0]; X0 = None
++        def und(p): return cv2.undistortPoints(np.asarray(p, dtype=np.float64).reshape(-1, 1, 2), K, dist, P=K).reshape(-1, 2)
++        def cand_rows(name): return None
++        print(f"[A] nạp precompute: {len(X1)} điểm 3D, {len(kp_obs)} ảnh có keypoint", flush=True)
++    else:
++        rec0 = pycolmap.Reconstruction(os.path.join(a.orig_scene, "train", "sparse", "0")); rec1 = pycolmap.Reconstruction(os.path.join(a.new_scene, "train", "sparse", "0"))
++        cam1 = next(iter(rec1.cameras.values())); K = cam1.calibration_matrix(); dist = np.asarray(cam1.params[4:8], dtype=np.float64) if cam1.model.name == "OPENCV" else np.zeros(4); W, H = cam1.width, cam1.height; Kinv = np.linalg.inv(K)
++        tr_names = set(os.listdir(os.path.join(a.orig_scene, "train", "images"))); new_w2c = {im.name: w2c_of(im) for im in rec1.images.values() if im.has_pose}; old_w2c = {im.name: w2c_of(im) for im in rec0.images.values()}
++        # quan sát 2D của từng điểm cũ trên ảnh train: pid -> list (name, xy)
++        obs = {}
++        for im in rec0.images.values():
++            if im.name not in tr_names or im.name not in new_w2c: continue
++            for p in im.points2D:
++                if p.has_point3D(): obs.setdefault(p.point3D_id, []).append((im.name, np.asarray(p.xy, dtype=np.float64)))
++        def und(p): return cv2.undistortPoints(np.asarray(p, dtype=np.float64).reshape(-1, 1, 2), K, dist, P=K).reshape(-1, 2)
++        # DLT tam giác hoá với pose mới
++        Xn = {}; nrej = 0
++        for pid, ol in obs.items():
++            if len(ol) < 2: continue
++            A = []; Ps = []; uvs = und(np.array([xy for _, xy in ol]))
++            for (nm, _), uv in zip(ol, uvs):
++                P = K @ new_w2c[nm][:3, :4]; Ps.append(P); A.append(uv[0] * P[2] - P[0]); A.append(uv[1] * P[2] - P[1])
++            _, _, Vt = np.linalg.svd(np.array(A)); X = Vt[-1]; X = X[:3] / X[3]
++            errs = []
++            for P, uv in zip(Ps, uvs):
++                x = P @ np.r_[X, 1]
++                if x[2] <= 0: errs.append(1e9); continue
++                errs.append(np.linalg.norm(x[:2] / x[2] - uv))
++            if np.median(errs) <= a.reproj_thr: Xn[pid] = X
++            else: nrej += 1
++        print(f"[y44b] tam giác hoá lại {len(Xn)} điểm cũ với pose mới (loại {nrej} tái chiếu > {a.reproj_thr} px; điểm cũ có ≥2 quan sát train: {sum(1 for v in obs.values() if len(v) >= 2)})", flush=True)
++        pids = np.array(list(Xn)); X0 = np.array([rec0.points3D[p].xyz for p in pids]); X1 = np.array([Xn[p] for p in pids]); f = K[0, 0]; pid_row = {int(p): i for i, p in enumerate(pids)}
++        seen_by = {}  # tên ảnh train -> set chỉ số hàng của điểm nó quan sát
++        for im in rec0.images.values():
++            if True: seen_by[im.name] = set(pid_row[p.point3D_id] for p in im.points2D if p.has_point3D() and p.point3D_id in pid_row)
++        byfr = {frame_index(n): n for n in tr_names}; offs = [int(x) for x in a.nb_offsets.split(",")]
++        def cand_rows(name):
++            if a.pts == "own": return np.array(sorted(seen_by.get(name, set())), dtype=int)
++            if a.pts == "nb":
++                fr = frame_index(name); S = set()
++                for d in offs:
++                    for sgn in (-d, d):
++                        m = byfr.get(fr + sgn)
++                        if m and m != name: S |= seen_by.get(m, set())
++                return np.array(sorted(S), dtype=int)
++            return None
++        kp_obs = {}
++        for im in rec0.images.values(): kp_obs[im.name] = [(np.asarray(p.xy, dtype=np.float64), pid_row[p.point3D_id]) for p in im.points2D if p.has_point3D() and p.point3D_id in pid_row]
++        def sim3_local(W_old, k=12):   # 09/09: Sim3 Umeyama old→new trên k camera train gần nhất (theo tâm cũ); xoay = R_new_nb·R_old_nbᵀ·R_old
++            names = [n for n in old_w2c if n in new_w2c and n in tr_names]
++            Co = np.array([-old_w2c[n][:3, :3].T @ old_w2c[n][:3, 3] for n in names]); Cn = np.array([-new_w2c[n][:3, :3].T @ new_w2c[n][:3, 3] for n in names])
++            c_old = -W_old[:3, :3].T @ W_old[:3, 3]; nb = np.argsort(np.linalg.norm(Co - c_old, axis=1))[:k]
++            A, B = Co[nb], Cn[nb]; ma, mb = A.mean(0), B.mean(0); U, D, Vt = np.linalg.svd((B - mb).T @ (A - ma) / k); S = np.eye(3)
++            if np.linalg.det(U @ Vt) < 0: S[2, 2] = -1
++            R = U @ S @ Vt; sc = np.trace(np.diag(D) @ S) / ((A - ma) ** 2).sum(1).mean(); t = mb - sc * R @ ma
++            c_new = sc * R @ c_old + t; n0 = names[nb[0]]; Rn = new_w2c[n0][:3, :3] @ old_w2c[n0][:3, :3].T @ W_old[:3, :3]
++            Wn = np.eye(4); Wn[:3, :3] = Rn; Wn[:3, 3] = -Rn @ c_new; return Wn
++        if a.pre_save:
++            _ko = {n: (np.array([o[0] for o in v], dtype=np.float64).reshape(-1, 2), np.array([o[1] for o in v], dtype=np.int64)) for n, v in kp_obs.items()}
++            np.save(a.pre_save, dict(K=K, dist=dist, W=W, H=H, X1=X1, kp_obs=_ko, old_w2c=old_w2c, new_w2c=new_w2c), allow_pickle=True)
++            print(f"[A] đã lưu precompute → {a.pre_save}", flush=True)
+     def transfer(W_old, name="", init=None, min_inl=None):
+         min_inl = a.min_inl if min_inl is None else min_inl; W_init = W_old if init is None else init
+         if a.pts == "kp" and name:
