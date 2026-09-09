@@ -128,3 +128,29 @@ Muốn giảm nữa chỉ còn cách hạ `depth_levels` (−0,16 điểm theo h
 
 Bài học harness: hai lần tự giết shell vì `grep`/`kill` khớp vào chính dòng lệnh của mình.
 Sampler nền phải ghi PID ra file và kill theo PID; mẫu tìm đọc từ file, không viết literal.
+
+## 9. Seed & tính lặp lại — ĐÃ ĐO (09/09)
+
+**① transfer (PnP-RANSAC): tất định bất kể seed.** 5 lần chạy `--pre_load` — không đặt seed ×2,
+`cv2.setRNGSeed(0)` ×2, `cv2.setRNGSeed(777)` — CSV pose giống **byte** (md5 2912ac53…, max|Δ| = 0).
+Lý do: `solvePnPRansac(flags=SOLVEPNP_ITERATIVE)` dùng RNG nội bộ trạng thái cố định
+(OpenCV ptsetreg.cpp `RNG rng((uint64)-1)`), không đọc `cv::theRNG()`; lấy mẫu điểm dùng
+`np.random.default_rng(0)`. ⇒ `cv2.setRNGSeed` trong pipeline.py **không cần và không hại**.
+(`VT_RANSAC=usac` chỉ ở match_dense lúc train, không nằm trong luồng suy luận.)
+
+**② fuse_test:**
+| So sánh | Giống bit | Ý nghĩa |
+|---|---|---|
+| base vs base2 (seed 0, chạy lại) | 102/102 | `torch.manual_seed(0)` đủ để lặp lại — *khi thứ tự view và số lần rút RNG y hệt* |
+| base vs base_s1 (seed 1) | 0/102 | chưa X: đổi seed = đổi ảnh (nhiễu ±0,003 điểm) |
+| base vs P (thêm cache, chưa X) | 0/102 | chưa X: cache làm số lần rút RNG đổi ⇒ ảnh đổi dù cùng seed |
+| baseX vs PX (X, có/không cache) | 102/102 | X gieo theo pose ⇒ độc lập seed toàn cục và thứ tự |
+| PX vs PX2 (X, chạy lại) | 102/102 | |
+
+Kết luận: giữ `SEED = 0` trong pipeline.py như hiện tại là đúng, không ảnh hưởng điểm.
+Lượt nộp 67,2311 chạy **trước** khi có seed nên không tái lập bit được nữa; sai khác chỉ ở mức
+nhiễu seed (0,003), không phải lỗi.
+
+**Cache depth nguồn: giữ fp32.** Trong code gốc `depth_cache[si] = d.cpu()` là float32 ⇒ .npy fp32
+là *y nguyên* thứ nằm trong RAM (baseX vs PX 102/102). Mỗi file (H+256)×(W+256)×4 byte =
+1245×1576×4 = **7,85 MB** ở /4 ⇒ 1101 ảnh ≈ **8,6 GB**. Không chuyển fp16 (−0,003).
